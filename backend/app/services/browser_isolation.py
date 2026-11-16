@@ -44,6 +44,8 @@ class LiveWebSession:
     created: float = field(default_factory=time.monotonic)
     attached: bool = False          # a browser WebSocket currently owns the relay
     violations_seen: int = 0
+    recording: bool = False
+    recording_id: Optional[object] = None
 
 
 def _token() -> str:
@@ -146,19 +148,21 @@ class BrowserIsolationGateway:
             return False
 
     async def launch(self, *, session_id, scheme: str, host: str, port: int, path: str, tls_pin: Optional[str],
-                     clipboard_allowed: bool, ttl_seconds: int) -> LiveWebSession:
+                     clipboard_allowed: bool, ttl_seconds: int, recording: bool = False,
+                     recording_id: Optional[object] = None) -> LiveWebSession:
         password = secrets.token_hex(4)  # 8 chars: the VNC password length; loopback-only, per session
         try:
             r = await self._call("POST", "/sessions", json={
                 "session_id": str(session_id), "scheme": scheme, "host": host, "port": port, "path": path,
                 "tls_pin": tls_pin, "clipboard_allowed": clipboard_allowed, "ttl_seconds": ttl_seconds,
-                "vnc_password": password})
+                "vnc_password": password, "recording": recording})
         except httpx.HTTPError as exc:
             raise IsolationError("ISOLATION_UNAVAILABLE") from exc
         if r.status_code != 201:
             code = (r.json() or {}).get("error", "LAUNCH_FAILED") if r.headers.get("content-type", "").startswith("application/json") else "LAUNCH_FAILED"
             raise IsolationError(code if code in ("TLS_VALIDATION_FAILED", "DESTINATION_BLOCKED") else "LAUNCH_FAILED")
-        live = LiveWebSession(session_id, int(r.json()["vnc_port"]), password, clipboard_allowed)
+        live = LiveWebSession(session_id, int(r.json()["vnc_port"]), password, clipboard_allowed,
+                              recording=recording, recording_id=recording_id)
         self._live[session_id] = live
         return live
 

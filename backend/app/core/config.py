@@ -154,6 +154,8 @@ class Settings(BaseSettings):
     # certificates, so certificate-chain validation is off by default; see README.
     RDP_SECURITY: str = "nla"
     RDP_IGNORE_CERT: bool = True
+    RDP_CERT_FINGERPRINT: Optional[str] = None
+    RDP_CA_CERT_PATH: Optional[str] = None
 
     # --- Isolated browser (infrastructure/browser-isolation) ---
     # Web (HTTP/HTTPS) launches are refused (503) unless enabled. The daemon's management API and VNC
@@ -290,6 +292,12 @@ class Settings(BaseSettings):
             errors.append(
                 "SECRET_KEY must be changed, non-empty, and sufficiently long in production; "
                 "it must be non-empty and non-placeholder in staging"
+            )
+
+        if production and self.RDP_IGNORE_CERT and not self.RDP_CERT_FINGERPRINT:
+            errors.append(
+                "RDP_IGNORE_CERT=true is not allowed when ENVIRONMENT=production; "
+                "TLS certificate verification or RDP_CERT_FINGERPRINT pinning is required"
             )
 
         if self.SECRET_PROVIDER == "mock":

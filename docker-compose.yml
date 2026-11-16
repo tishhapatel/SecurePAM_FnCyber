@@ -78,11 +78,14 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-securepam}:${POSTGRES_PASSWORD:-securepam_dev_password}@postgres:5432/${POSTGRES_DB:-securepam}
       - REDIS_URL=redis://redis:6379/0
       - OPENBAO_ADDR=http://openbao:8200
+      - SIEM_EVENT_LOG_PATH=${SIEM_EVENT_LOG_PATH:-/data/logs/securepam-siem.json}
+      - KEYCLOAK_MFA_SYNC_ENABLED=${KEYCLOAK_MFA_SYNC_ENABLED:-true}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
       - recording_data:/data/recordings
+      - siem_logs:/data/logs
       - openbao_runtime:/run/openbao:ro
     command:
       - sh
@@ -269,6 +272,7 @@ volumes:
   grafana_data:
   openbao_runtime:
   keycloak_postgres_data:
+  siem_logs:
 
 networks:
   securepam-net:

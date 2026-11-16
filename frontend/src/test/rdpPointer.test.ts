@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { attachPointer, displayPoint, mouseState, remoteCursorCss, type MouseStateTemplate } from '@/lib/guacamole';
 
 // Measured live: with SecurePAM's <main> scrolled by 123 px, Guacamole 1.5.0's offsetParent-based

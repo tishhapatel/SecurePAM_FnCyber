@@ -602,7 +602,7 @@ async def ssh_terminal_websocket(
 
         # Atomically consume ticket (Fix F-04: validates binding to session, user, and asset)
         try:
-            ticket_data = await ticket_service.consume_ticket(
+            await ticket_service.consume_ticket(
                 ticket=ticket,
                 expected_session_id=session.id,
                 expected_user_id=session.user_id,

@@ -68,7 +68,7 @@ async def test_detailed_health_reports_dev_mode_truthfully(client: AsyncClient, 
 async def test_detailed_health_reports_unwritable_recording_storage(client: AsyncClient, operator_token, tmp_path, monkeypatch):
     from app.core.config import settings
     locked = tmp_path / "locked"
-    locked.mkdir(mode=0o500)
+    locked.write_text("file")
     monkeypatch.setattr(settings, "RECORDING_STORAGE_PATH", str(locked / "recordings"))
     try:
         body = (await client.get("/health/detailed", headers=auth_header(operator_token))).json()

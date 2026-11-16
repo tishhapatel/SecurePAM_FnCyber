@@ -201,10 +201,12 @@ async def rdp_websocket(
                 account, domain = _split_account(credential.username)
                 params = {
                     "hostname": target_host, "port": str(target_port), "username": account, "password": credential.reveal(),
-                    "domain": domain, "security": settings.RDP_SECURITY, "ignore-cert": "true" if settings.RDP_IGNORE_CERT else "false",
+                    "domain": domain, "security": settings.RDP_SECURITY, "ignore-cert": "false" if (settings.ENVIRONMENT.lower() == "production" or not settings.RDP_IGNORE_CERT) else "true",
                     "resize-method": "display-update", "disable-audio": "true", "timezone": "UTC",
                     **channel_params(controls), "client-name": client_name(session_number),
                 }
+                if settings.RDP_CERT_FINGERPRINT:
+                    params["certificate"] = settings.RDP_CERT_FINGERPRINT
         except (CredentialAccessDenied, CredentialUnavailable) as exc:
             await _close_session_in_db(session_id, status_val="FAILED", reason=exc.reason)
             await refuse(exc.reason)
@@ -317,7 +319,7 @@ async def rdp_websocket(
 
         # 6. Relay + monitor.
         async def guacd_to_browser():
-            nonlocal final_status, final_reason
+            nonlocal final_reason
             try:
                 while True:
                     text, instructions = await stream.read_chunk()
@@ -356,7 +358,7 @@ async def rdp_websocket(
                 logger.warning("rdp input error session=%s %s", session_id, type(exc).__name__)
 
         async def monitor():
-            nonlocal final_status, final_reason
+            nonlocal final_reason
             consecutive = 0
             try:
                 while True:

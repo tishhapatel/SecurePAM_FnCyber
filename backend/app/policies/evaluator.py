@@ -20,6 +20,14 @@ from app.models.asset import Asset
 from app.models.policy import Policy
 from app.models.user import User
 
+try:
+    import securepam_policy_engine
+    from securepam_policy_engine.models import AccessContext, Decision, ReasonCode
+    HAS_STANDALONE_POLICY_ENGINE = True
+except ImportError:
+    securepam_policy_engine = None
+    HAS_STANDALONE_POLICY_ENGINE = False
+
 # Fail-safe stance when NO policy governs this target (none assigned, or
 # the assigned one is disabled): more scrutiny, not less. Still `allowed`
 # (the request can proceed to the approval queue) rather than an outright
@@ -167,4 +175,36 @@ class PolicyEvaluator:
             max_duration=max_duration,
             auto_approve=policy.auto_approve,
             reasons=reasons,
+        )
+
+    @staticmethod
+    def to_engine_context(
+        user: User,
+        target: Union[Asset, Application],
+        protocol: str,
+        requested_duration: int,
+        request_id: Optional[str] = None,
+        now: Optional[datetime] = None,
+        risk_score: Optional[int] = None,
+    ):
+        """Constructs a securepam_policy_engine.AccessContext from local ORM models."""
+        if not HAS_STANDALONE_POLICY_ENGINE:
+            return None
+        roles = sorted({ur.role.name for ur in user.roles if ur.role})
+        primary_role = roles[0] if roles else "operator"
+        extra_roles = tuple(roles[1:]) if len(roles) > 1 else ()
+        now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        return AccessContext(
+            request_id=str(request_id or user.id),
+            user_id=str(user.id),
+            role=primary_role,
+            extra_roles=extra_roles,
+            target_id=str(target.id),
+            target_registered=True,
+            environment=getattr(target, "environment", "production"),
+            protocol=protocol,
+            requested_duration_minutes=requested_duration,
+            now=now_utc,
+            risk_score=risk_score,
+            criticality=getattr(target, "criticality", None),
         )

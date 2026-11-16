@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 // A stand-in for Guacamole.SessionRecording that records every seek and lets the test drive callbacks.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const fake = vi.hoisted(() => ({ seeks: [] as number[], instance: null as null | Record<string, any> }));
 vi.mock('@/lib/guacamole', () => ({
   createRecordingTunnel: () => ({}),
   Guacamole: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     SessionRecording: function SessionRecording(this: any) {
       const el = document.createElement('div');
       let position = 0;

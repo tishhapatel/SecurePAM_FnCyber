@@ -144,6 +144,10 @@ class Session:
         self.state, self.failure = "STARTING", None
         self.violations: List[dict] = []
         self.started = time.time()
+        self.recording = bool(spec.get("recording", False))
+        self.recording_file: Optional[str] = None
+        self.recording_proc: Optional[subprocess.Popen] = None
+        self.recordings_dir = os.environ.get("RECORDINGS_DIR", "/recordings/web")
 
     # -- egress proxy ----------------------------------------------------------------------------
     def allowed(self, host: str, port: int) -> bool:
@@ -248,6 +252,21 @@ class Session:
             vnc += ["-noclipboard", "-nosetclipboard"]
         self.procs.append(subprocess.Popen(vnc, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                            start_new_session=True))
+        if self.recording:
+            self.recording_file = os.path.join(self.dir, "recording.mp4")
+            ffmpeg_bin = shutil.which("ffmpeg")
+            if ffmpeg_bin:
+                ffmpeg_cmd = [
+                    ffmpeg_bin, "-y", "-video_size", f"{WIDTH}x{HEIGHT}",
+                    "-framerate", "15", "-f", "x11grab", "-i", f"{self.display}.0",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                    self.recording_file
+                ]
+                self.recording_proc = subprocess.Popen(
+                    ffmpeg_cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+                self.procs.append(self.recording_proc)
         asyncio.get_event_loop().create_task(self.watch(spec.get("ttl_seconds", 1800)))
 
     def page(self) -> Optional[dict]:
@@ -326,7 +345,19 @@ def session_processes(s: Session) -> List[int]:
 async def stop(sid: str) -> dict:
     s = SESSIONS.pop(sid, None)
     if s is None:
-        return {"cleaned": True, "leftover": []}
+        return {"cleaned": True, "leftover": [], "recording": None}
+
+    # Stop recording gracefully first so moov atom/container index is written
+    if s.recording and s.recording_proc:
+        try:
+            s.recording_proc.send_signal(signal.SIGINT)
+            for _ in range(25):
+                if s.recording_proc.poll() is not None:
+                    break
+                await asyncio.sleep(0.1)
+        except Exception:
+            pass
+
     for p in s.procs:
         try: os.killpg(p.pid, signal.SIGTERM)
         except ProcessLookupError: pass
@@ -349,10 +380,36 @@ async def stop(sid: str) -> dict:
     await asyncio.sleep(0.2)
     if s.proxy_server:
         s.proxy_server.close()
+
+    recording_meta = None
+    if s.recording and s.recording_file and os.path.exists(s.recording_file):
+        try:
+            import hashlib
+            file_size = os.path.getsize(s.recording_file)
+            h = hashlib.sha256()
+            with open(s.recording_file, "rb") as rf:
+                while chunk := rf.read(65536):
+                    h.update(chunk)
+            file_hash = h.hexdigest()
+            dest_dir = os.path.join(s.recordings_dir, s.sid)
+            os.makedirs(dest_dir, exist_ok=True)
+            dest_file = os.path.join(dest_dir, "recording.mp4")
+            shutil.move(s.recording_file, dest_file)
+            duration = max(1, round(time.time() - s.started))
+            recording_meta = {
+                "file_path": dest_file,
+                "file_size": file_size,
+                "file_hash": file_hash,
+                "duration_seconds": duration,
+                "format": "mp4",
+            }
+        except Exception as exc:
+            log("recording_finalize_failed", session=s.sid, error=str(exc))
+
     shutil.rmtree(s.dir, ignore_errors=True)
     leftover = s.alive() + ([s.dir] if os.path.exists(s.dir) else [])
     log("session_stopped", session=s.sid, leftover=len(leftover))
-    return {"cleaned": not leftover, "leftover": [str(x) for x in leftover]}
+    return {"cleaned": not leftover, "leftover": [str(x) for x in leftover], "recording": recording_meta}
 
 
 # -- management API (tiny HTTP/1.1 server; loopback-published, bearer-token protected) -------------
